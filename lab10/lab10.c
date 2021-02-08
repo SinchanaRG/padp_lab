@@ -1,51 +1,72 @@
 #include <sys/time.h>
+#include<stdlib.h>
 #include <stdio.h>
-#include<math.h>
-#include<string.h>
-#define MAX_TEMP_ERROR 0.00001
-#define ROWS 5000
-#define COLUMNS 5000
+#define MAX 1000
+int SIZE;
+double a[MAX][MAX];
+double b[MAX][MAX];
+double c[MAX][MAX];
+double d[MAX][MAX];
 
-float A[ROWS][COLUMNS],A_new[ROWS][COLUMNS];
+int main(int argc, char* argv[])
+{
+  SIZE=atoi(argv[1]);
+  int i,j,k;
+  struct timeval tim;
+  double t1, t2;
+  double tmp;
 
-void main(){
-        float dt=876788;
-        int max_iterations=1000;
-        int iterations=0;
-        int i,j;
-struct timeval tim;
-        double t1, t2;
+  // Initialize matrices.
+  for (i = 0; i < SIZE; ++i) {
+    for (j = 0; j < SIZE; ++j) {
+      a[i][j] = (double)(i + j);
+      b[i][j] = (double)(i - j);
+      c[i][j] = 0.0f;
+      d[i][j] = 0.0f;
+    }
+  }
 
-        memset(A, 0,((long)ROWS) *COLUMNS * sizeof(float));
+for (i = 0; i < SIZE; ++i) {
+    for (j = 0; j < SIZE; ++j) {
+      tmp=0.0f;
+      for (k = 0; k < SIZE; ++k) {
+        tmp += a[i][k] * b[k][j];
+      }
+      d[i][j] = tmp;
+    }
+  }
+ 
+  gettimeofday(&tim, NULL);
+  t1=tim.tv_sec+(tim.tv_usec/1000000.0);
 
-        gettimeofday(&tim, NULL);
+  
+#pragma acc data copyin(a,b) copy(c)
+#pragma acc kernels
+#pragma acc loop tile(32,32)
+  for (i = 0; i < SIZE; ++i) {
+    for (j = 0; j < SIZE; ++j) {
+      tmp=0.0f;
+#pragma acc loop reduction(+:tmp)
+      for (k = 0; k < SIZE; ++k) {
+        tmp += a[i][k] * b[k][j];
+      }
+      c[i][j] = tmp;
+    }
+  }
 
-        t1=tim.tv_sec+(tim.tv_usec/1000000.0);
+ 
+  gettimeofday(&tim, NULL);
+  t2=tim.tv_sec+(tim.tv_usec/1000000.0);
+  printf("%.6lf seconds with OpenACC \n", t2-t1);
 
-        while(dt>MAX_TEMP_ERROR && iterations<=max_iterations){
-                #pragma acc kernels
-                for(i=1;i<ROWS-1;i++){
-                        for(j=1;j<COLUMNS-1;j++){
-                                A_new[i][j] = 0.25f*(A[i+1][j]+A[i-1][j]+A[i][j+1]+A[i][j-1]);
-                        }
-                }
 
-                dt = 0.0;
-
-                #pragma acc kernels
-                for(i=1;i<ROWS-1;i++){
-                       for(j=1;j<COLUMNS-1;j++){
-                           dt = fmax(fabs(A_new[i][j]-A[i][j]),dt);
-                               A[i][j]=A_new[i][j];
-                       }
-                }
-                iterations++;
-        }
-
-        gettimeofday(&tim, NULL);
-
-        t2=tim.tv_sec+(tim.tv_usec/1000000.0);
-
-        printf("%.6lf seconds with OpenACC \n", t2-t1);
-
+  
+  for (i = 0; i < SIZE; ++i)
+    for (j = 0; j < SIZE; ++j)
+      if(c[i][j] != d[i][j]) {
+	printf("Error %d %d %f %f \n", i,j, c[i][j], d[i][j]);
+	exit(1);
+      }
+  printf("OpenACC matrix multiplication test was successful!\n");
+  return 0;
 }
